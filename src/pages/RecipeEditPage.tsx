@@ -5,7 +5,8 @@ import { blankRecipe, defaultLocation, deleteRecipe, newIngredient, saveRecipe }
 import { newId, useData } from '../data/store';
 import { SECTIONS, type Ingredient, type Recipe, type RecipeLine } from '../data/types';
 import { cap, matchKey, normalizeName } from '../utils/names';
-import { cleanNewName, findExact, guessSection, joinNote, matchIngredient, parseLine } from '../utils/parseIngredients';
+import { cleanNewName, findExact, guessSection, joinNote, joinWrappedLines, matchIngredient, parseLine } from '../utils/parseIngredients';
+import { importRecipeFromUrl, type ImportedRecipe } from '../utils/importRecipe';
 import { formatQty, isKnownUnit, normalizeUnit, parseQty, UNIT_SUGGESTIONS } from '../utils/units';
 
 interface DraftLine {
@@ -57,6 +58,10 @@ export default function RecipeEditPage() {
   const [pasteText, setPasteText] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
+  const [importUrl, setImportUrl] = useState('');
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importDone, setImportDone] = useState<string | null>(null);
 
   if (id && !existing) {
     return (
@@ -83,9 +88,10 @@ export default function RecipeEditPage() {
     updateLine(lineId, { name, ingredientId: match?.id ?? null, ...(match ? {} : { newSection: guessSection(name) }) });
   }
 
-  function addPasted() {
+  /** Turns ingredient lines ("1 ½ cups chopped onion") into editor lines matched to your ingredients. */
+  function draftLinesFrom(rawLines: string[]): DraftLine[] {
     const parsed: DraftLine[] = [];
-    for (const raw of pasteText.split('\n')) {
+    for (const raw of rawLines) {
       const p = parseLine(raw);
       if (!p || !p.name) continue;
       // Skip headings like "For the sauce:".
@@ -115,10 +121,82 @@ export default function RecipeEditPage() {
         });
       }
     }
+    return parsed;
+  }
+
+  function addPasted() {
+    const parsed = draftLinesFrom(pasteText.split('\n'));
     if (parsed.length === 0) return;
     setLines((ls) => [...ls.filter((l) => l.name.trim() || l.qtyText.trim()), ...parsed]);
     setPasteText('');
     setPasteOpen(false);
+    setDirty(true);
+  }
+
+  function applyImport(r: ImportedRecipe) {
+    const parsed = draftLinesFrom(r.ingredients);
+    setTitle(r.title);
+    if (r.servings) setServings(r.servings);
+    setLines(parsed);
+    setSteps(r.steps.join('\n'));
+    setTagsText(r.tags.join(', '));
+    setSourceUrl(r.source_url);
+    setNotes(r.notes);
+    setPasteOpen(false);
+    setDirty(true);
+    const fresh = parsed.filter((l) => !l.ingredientId).length;
+    const host = (() => {
+      try {
+        return new URL(r.source_url).hostname.replace(/^www\./, '');
+      } catch {
+        return 'the page';
+      }
+    })();
+    setImportDone(
+      `Imported from ${host}: ${parsed.length} ingredients, ${r.steps.length} steps.` +
+        (fresh ? ` ${fresh} new ${fresh === 1 ? 'ingredient is' : 'ingredients are'} marked below; check their store sections.` : '') +
+        ' Look it over, then Save.',
+    );
+  }
+
+  async function importFromLink() {
+    const typed = importUrl.trim();
+    if (!typed) return;
+    // Links copied without the https:// part ("www.site.com/recipe") still work.
+    const url = /^[a-z][a-z0-9+.-]*:/i.test(typed) ? typed : `https://${typed}`;
+    setImportError(null);
+    setImportDone(null);
+    if ((title.trim() || lines.some((l) => l.name.trim())) && !confirm('Replace what you have entered so far with the imported recipe?')) return;
+    setImporting(true);
+    try {
+      applyImport(await importRecipeFromUrl(url));
+    } catch (err) {
+      setImportError((err as Error).message);
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  async function pasteLink() {
+    try {
+      const text = (await navigator.clipboard.readText()).trim();
+      const found = text.match(/https?:\/\/\S+/)?.[0] ?? text;
+      if (found) setImportUrl(found);
+    } catch {
+      setImportError('Couldn\'t read the clipboard. Tap the box and paste instead.');
+    }
+  }
+
+  function pasteSteps(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+    const text = e.clipboardData.getData('text/plain');
+    if (!text.includes('\n')) return;
+    e.preventDefault();
+    const el = e.currentTarget;
+    const joined = joinWrappedLines(text);
+    const before = steps.slice(0, el.selectionStart);
+    const after = steps.slice(el.selectionEnd);
+    const glueBefore = before && !before.endsWith('\n') ? '\n' : '';
+    setSteps(before + glueBefore + joined + after);
     setDirty(true);
   }
 
@@ -184,6 +262,58 @@ export default function RecipeEditPage() {
           Save
         </button>
       </div>
+
+      {!existing && (
+        <section className="import-card">
+          <h2>Start from a link</h2>
+          <form
+            noValidate
+            className="import-row"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void importFromLink();
+            }}
+          >
+            <input
+              type="url"
+              inputMode="url"
+              autoCapitalize="none"
+              autoCorrect="off"
+              enterKeyHint="go"
+              placeholder="Paste a recipe page's address"
+              value={importUrl}
+              onChange={(e) => setImportUrl(e.target.value)}
+              aria-label="Recipe link"
+            />
+            <button className="btn" type="submit" disabled={!importUrl.trim() || importing}>
+              {importing ? 'Importing…' : 'Import'}
+            </button>
+          </form>
+          {'clipboard' in navigator && !importUrl && (
+            <button className="btn-link" type="button" onClick={pasteLink}>
+              Paste link
+            </button>
+          )}
+          {importError && <p className="form-error">{importError}</p>}
+          {importDone && (
+            <p className="toast" role="status">
+              {importDone}
+            </p>
+          )}
+          <details className="tip">
+            <summary>From a cookbook or a photo?</summary>
+            <p>
+              Use Live Text on your iPhone or iPad. Open the photo in Photos (or point the Camera at the page) and tap the
+              Live Text button, the square with lines in it. Touch and hold the text, drag to select the ingredients, and
+              tap <strong>Copy</strong>.
+            </p>
+            <p>
+              Paste them into the ingredients box below, then do the same for the method and paste it into Steps. Lines that
+              wrapped on the page are joined back into whole steps.
+            </p>
+          </details>
+        </section>
+      )}
 
       <div className="field">
         <label htmlFor="r-title">Name</label>
@@ -305,7 +435,7 @@ export default function RecipeEditPage() {
 
       <div className="field">
         <label htmlFor="r-steps">Steps (one per line)</label>
-        <textarea id="r-steps" rows={8} value={steps} onChange={(e) => touch(setSteps)(e.target.value)} />
+        <textarea id="r-steps" rows={8} value={steps} onChange={(e) => touch(setSteps)(e.target.value)} onPaste={pasteSteps} />
       </div>
 
       <div className="field">

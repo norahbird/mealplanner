@@ -1709,3 +1709,52 @@ a {
   margin: 12px auto 0;
   font-size: 14px;
 }
+
+/* Recipe import */
+.import-card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 14px;
+  margin-bottom: 20px;
+}
+
+.import-card h2 {
+  font-size: 17px;
+  margin-bottom: 10px;
+}
+
+.import-row {
+  display: flex;
+  gap: 8px;
+}
+
+.import-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.import-card .btn-link {
+  min-height: 36px;
+  padding: 4px 0;
+}
+
+.tip {
+  margin-top: 8px;
+  font-size: 15px;
+  color: var(--text-muted);
+}
+
+.tip summary {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  color: var(--accent);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.tip p {
+  margin: 4px 0 10px;
+  line-height: 1.5;
+}

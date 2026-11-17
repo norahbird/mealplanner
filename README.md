@@ -15,7 +15,13 @@ and keep track of what's on hand so less goes to waste.
 - **On hand:** what's in the fridge, freezer and pantry, each marked Have / Low / Out with a
   color-coded use-by date. Staples ("Always have") never go on the grocery list.
 - **Recipes:** ingredients, steps, tags, a source link, notes and a rating. Paste a whole ingredient
-  list and it's split into amounts, units and ingredients for you. Ingredients are shared across
+  list and it's split into amounts, units and ingredients for you.
+  - **Import from a link:** paste a recipe page's address and the title, servings, ingredients, steps,
+    times and tags are filled in for you to check before saving. This reads the structured recipe data
+    most recipe sites publish (schema.org `Recipe`), through the `api/import-recipe` server function;
+    no AI or paid service is involved. Some sites block it, and some don't publish the data.
+  - **From a cookbook:** copy the text from a photo with Live Text on iPhone or iPad and paste it in.
+    Steps pasted this way have their page line-wraps joined back into whole steps. Ingredients are shared across
   recipes, so the app knows the onion in one recipe is the onion in another.
 - **Works offline:** changes are saved on the device first and synced when there's a connection,
   so the grocery list works in a store with no signal.
@@ -58,6 +64,10 @@ npm install
 npm run dev      # start the dev server
 npm run build    # type-check and build for production
 ```
+
+`npm run dev` doesn't run the `api/` server function, so link import only works on a Vercel
+deployment (or locally with `npx vercel dev`). The function reads the same `VITE_SUPABASE_URL` and
+`VITE_SUPABASE_ANON_KEY` variables to check that the caller is signed in.
 
 ## Deploying (Vercel)
 

@@ -103,6 +103,10 @@ export function joinNote(...parts: string[]): string {
 
 const SECTION_HINTS: [RegExp, string][] = [
   [/\bfrozen\b/, 'Frozen'],
+  // Checked before the meat words, so "chicken stock" isn't filed under meat.
+  [/\b(stock|broth|bouillon)\b/, 'Canned & Jarred'],
+  [/\b(vinegar|sauce)\b/, 'Condiments & Sauces'],
+  [/\b(wine|beer|cider|vermouth|sherry|brandy|rum|vodka)\b/, 'Drinks'],
   [/\b(chicken|beef|pork|lamb|turkey|fish|salmon|shrimp|prawns?|bacon|sausages?|steak|cod|chorizo|mince)\b/, 'Meat & Seafood'],
   [/\b(cheese|milk|cream|yogh?urt|butter|eggs?|ricotta|mascarpone|halloumi|paneer)\b/, 'Dairy & Eggs'],
   [/\b(powder|seasoning|spice|extract|dried \w+|ground \w+|cardamom|cloves|coriander seeds?|garam masala)\b/, 'Spices & Baking'],
@@ -118,4 +122,26 @@ export function guessSection(name: string): string {
   const n = normalizeName(name);
   for (const [re, section] of SECTION_HINTS) if (re.test(n)) return section;
   return 'Other';
+}
+
+/**
+ * Text copied from a photo (Live Text) or a PDF keeps the page's line wraps, so one step
+ * arrives as several lines. This rejoins lines into whole steps: a new step starts after a
+ * line ending in . ! ? or :, or at a line that starts with a number ("2." or "Step 2").
+ */
+export function joinWrappedLines(text: string): string {
+  const out: string[] = [];
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) {
+      if (out.length && out[out.length - 1] !== '') out.push('');
+      continue;
+    }
+    const last = out[out.length - 1];
+    const startsStep = /^(\d+[.)]|step\s+\d+|[-•*])\s*/i.test(line);
+    if (last === undefined || last === '' || startsStep || /[.!?:)]["'”’]?$/.test(last)) out.push(line);
+    else if (/[a-z]-$/i.test(last) && /^[a-z]/.test(line)) out[out.length - 1] = last.slice(0, -1) + line;
+    else out[out.length - 1] = `${last} ${line}`;
+  }
+  return out.filter((l) => l !== '').join('\n');
 }
